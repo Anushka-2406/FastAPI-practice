@@ -1,5 +1,48 @@
 from fastapi import FastAPI, Path, HTTPException, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, computed_field
+from typing import Optional, List, Dict, Annotated, Literal
 import json
+
+
+# Creating a pydantic model for the data structure
+class Patient(BaseModel):
+    id: Annotated[str,Field(..., description='ID of the patient')]
+
+    name : Annotated[str, Field(..., description='Name of the patient')]
+    city : Annotated[str, Field(..., description='City of the patient')]
+    age: Annotated[int, Field(..., gt=0,lt=120, description='Age of the patient')]
+    gender : Annotated[Literal['Male','Female','Other'], Field(..., description='Gender of the patient')]
+    height: Annotated[float, Field(..., gt=0, description='Height of the patient in cm')]
+    weight: Annotated[float, Field(..., gt=0, description='Weight of the patient in kg')]
+    
+    @computed_field
+    @property
+    def bmi(self)-> float:
+        """Calculate the Body Mass Index (BMI) of the patient."""
+        return round(self.weight / (self.height ** 2), 2)
+    
+    @computed_field
+    @property
+    def verdict(self) ->str:
+        if(self.bmi <18.5):
+            return 'Underweight'
+        elif(self.bmi >= 18.5 and self.bmi < 24.9):
+            return 'Normal weight'
+        elif(self.bmi >= 25 and self.bmi < 29.9):
+            return 'Overweight'
+        else:
+            return 'Obesity'
+    
+
+
+
+
+
+
+
+
+
 app = FastAPI()
 
 def load_data():
@@ -26,7 +69,7 @@ def data():
 """
 
 @app.get('/patients/{patient_id}')
-def get_patient(patient_id: str = Path(..., description='ID of patient',example='P001')):
+def get_patient(patient_id: str = Path(..., description='ID of patient',examples='P001')):
     data =load_data()
     if patient_id in data: 
         return data[patient_id]
@@ -42,7 +85,7 @@ def get_patient(patient_id: str = Path(..., description='ID of patient',example=
     - Example: raise HTTPException(status_code=404, detail="Item not found")
     """
 @app.get('/patient_info/{patient_info}')
-def patient_info(patient_info: str=Path(..., description='ID of patient', example='P001')):
+def patient_info(patient_info: str=Path(..., description='ID of patient', examples='P001')):
     data=load_data()
 
     if patient_info in data:
@@ -72,3 +115,16 @@ def sort_f(sort_by : str =Query(..., description='sort by field'),order : str = 
 
         data_new=sorted(data1.values(),key=lambda x : x.get(sort_by,0),reverse=True if order=='desc' else False)
         return {'data': data_new}
+
+@app.post('/create')
+def create_patient(patient: Patient):
+    data = load_data()
+    if patient.id in data:
+        raise HTTPException(status_code=400, detail="Patient with this ID already exists")
+    
+    data[patient.id] = patient.model_dump(exclude={'id'})
+    
+    with open('data.json', 'w') as file:
+        json.dump(data, file)
+    
+    return JSONResponse(status_code=201, content={"message": "Patient created successfully"})
